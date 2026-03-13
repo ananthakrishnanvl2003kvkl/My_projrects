@@ -227,88 +227,75 @@ PRIORITY_MAP = {
 
 
 
+import sys
+from pathlib import Path
+backend_path = Path(r"c:\\Users\\ANANTHAKRISHNAN V L\\OneDrive\\Desktop\\Ananthan\\intelligent-fir-analyzer-main")
+if str(backend_path) not in sys.path:
+    sys.path.append(str(backend_path))
+from backend.services.enhanced_classification_service import enhanced_classification_service
+
 def analyze_fir_logic(text, form_data=None):
-    """Analyze FIR using loaded Dataset"""
+    """Analyze FIR using advanced backend ML/Rules engine"""
     full_text = text
     if form_data:
          # Append form data to analysis text
          full_text += " " + json.dumps(form_data)
     
-    # Use the helper function to find sections from DataFrame
-    matched_sections = find_matching_sections(full_text, ipc_df)
-    
-    # If no sections found, fallback
-    if not matched_sections:
+    # Use the advanced service to analyze
+    try:
+        analysis_result = enhanced_classification_service.analyze_fir(full_text)
+        
+        # Map backend properties to Streamlit expectations
+        predicted_sections = analysis_result.get('predicted_sections', [])
+        
+        # Transform predictions to match UI interface
+        ui_sections = []
+        for sec in predicted_sections:
+            ui_sections.append({
+                'section': sec['section'],
+                'description': sec['title'],
+                'punishment': sec.get('description', 'Refer to IPC Code')
+            })
+            
+        crime_types = analysis_result.get('crime_types', [])
+        if not crime_types and ui_sections:
+            # Fallback to titles if no high-level categories
+            crime_types = [s['description'] for s in ui_sections[:3]]
+            
+        confidence_val = f"{analysis_result.get('model_accuracy', 85):.1f}%"
+        
         return {
-            'crimeTypes': ['NO SPECIFIC CRIME DETECTED'],
+            'crimeTypes': crime_types if crime_types else ['Case Submitted'],
+            'ipcSections': ui_sections[:8],
+            'severity': analysis_result.get('severity', 'Medium'),
+            'priority': analysis_result.get('priority', 'Normal'),
+            'accuracy': confidence_val,
+            'suggestions': [
+                'Immediate investigation required',
+                'Collect forensic evidence from crime scene',
+                'Record witness statements',
+                'Verify accused identity and background',
+                'Check for prior criminal records in CCTNS database'
+            ],
+            'extractedInfo': {
+                'complainant': form_data.get('complainantName', 'Not provided') if form_data else 'Not provided',
+                'location': form_data.get('incidentLocation', 'Not provided') if form_data else 'Not provided',
+                'date': form_data.get('incidentDate', 'Not provided') if form_data else 'Not provided',
+                'accused': form_data.get('accusedName', 'Not identified') if form_data else 'Not identified'
+            }
+        }
+    except Exception as e:
+        print(f"Error calling backend analyzer: {e}")
+        # Fallback empty result
+        return {
+            'crimeTypes': ['ERROR DETECTED'],
             'ipcSections': [],
             'severity': 'Unknown',
             'priority': 'Normal',
             'accuracy': "0%",
-            'suggestions': [],
-            'extractedInfo': {} # ... (rest logic below)
+            'suggestions': [f'Error: {str(e)}'],
+            'extractedInfo': {}
         }
-    
-    # Determine Severity and Priority based on matched titles/descriptions
-    severity = 'Low'
-    priority = 'Normal'
-    
-    detected_keywords = []
-    
-    for item in matched_sections:
-        combined_str = (item['title'] + " " + item['description']).lower()
-        # Check against Maps
-        for key, val in SEVERITY_MAP.items():
-            if key in combined_str:
-                if val == 'High': severity = 'High'
-                elif val == 'Medium' and severity != 'High': severity = 'Medium'
-        
-        for key, val in PRIORITY_MAP.items():
-            if key in combined_str:
-                if val == 'Urgent': priority = 'Urgent'
-                
-        # For display purposes (Crime Types)
-        # Try to map the long CSV title to a short, readable crime name
-        short_name = None
-        for key in SEVERITY_MAP.keys():
-            if key in combined_str and not key.isdigit(): # Don't use '302' as the name, use 'murder'
-                short_name = key.replace('_', ' ').upper()
-                break
-        
-        if short_name:
-            detected_keywords.append(short_name)
-        else:
-            # Fallback to title, cleaning it up
-            clean_title = item['title'].replace('Punishment for ', '').replace('Punishment of ', '').strip()
-            detected_keywords.append(clean_title)
-
-    # Calculate Accuracy Score
-    base_accuracy = 85
-    import random
-    # Higher score if we found multiple relevant sections
-    accuracy_val = min(99, base_accuracy + len(matched_sections) + random.randint(0, 5))
-
-    return {
-        'crimeTypes': list(set(detected_keywords))[:5], # Top 5 unique titles
-        'ipcSections': matched_sections, # List of dicts with section, punishment etc
-        'severity': severity,
-        'priority': priority,
-        'accuracy': f"{accuracy_val}%",
-        'suggestions': [
-            'Immediate investigation required',
-            'Collect forensic evidence from crime scene',
-            'Record witness statements',
-            'Verify accused identity and background',
-            'Check for prior criminal records in CCTNS database'
-        ],
-        'extractedInfo': {
-            'complainant': form_data.get('complainantName', 'Not provided') if form_data else 'Not provided',
-            'location': form_data.get('incidentLocation', 'Not provided') if form_data else 'Not provided',
-            'date': form_data.get('incidentDate', 'Not provided') if form_data else 'Not provided',
-            'accused': form_data.get('accusedName', 'Not identified') if form_data else 'Not identified'
-        }
-    }
-
 
 # -----------------------------------------------------------------------------
 # UI COMPONENTS
